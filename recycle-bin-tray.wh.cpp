@@ -90,6 +90,8 @@ This small delay is intentional. Removing it while keeping independent single- a
 
 Single-click execution is deferred by the Windows double-click interval so that a physical double-click executes only its configured double-click action. If **Double click action = Do nothing**, a physical double-click therefore performs no action.
 
+When **Left click** and **Double click** use the same action, there is nothing to disambiguate, so the action runs immediately on the first click. A physical double-click still runs it only once.
+
 ## Drag & Drop
 
 Drag & Drop is disabled by default. Enable **Enable drag & drop** in the mod settings before using this feature. When enabled, the feature uses a global low-level mouse hook (`WH_MOUSE_LL`) to detect the start of drag gestures.
@@ -5234,11 +5236,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     g_suppressLeftActivationUntil = 0;
                 }
 
-                // Keyboard activation has no mouse double-click ambiguity.
-                // Mouse activation is always deferred so a following
-                // WM_LBUTTONDBLCLK can cancel the pending single-click action,
-                // including when the configured double-click action is None.
-                if (trayMessage == NIN_KEYSELECT) {
+                // Keyboard activation has no mouse double-click ambiguity, and
+                // neither does a click whose action matches the double-click
+                // action: run those immediately. Other mouse activations are
+                // deferred so a following WM_LBUTTONDBLCLK can cancel the
+                // pending single-click action, including when the configured
+                // double-click action is None.
+                if (trayMessage == NIN_KEYSELECT ||
+                    g_settings.leftClickAction == g_settings.doubleClickAction) {
                     ExecuteAction(g_settings.leftClickAction, hWnd);
                 } else {
                     (void)SetLoggedTimer(hWnd, TIMER_CLICK_ID, GetDoubleClickTime());
@@ -5247,7 +5252,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 (void)StopTimer(hWnd, TIMER_CLICK_ID);
                 g_suppressLeftActivationUntil =
                     GetTickCount64() + GetDoubleClickTime();
-                ExecuteAction(g_settings.doubleClickAction, hWnd);
+                // A shared action already ran on the first click.
+                if (g_settings.leftClickAction != g_settings.doubleClickAction) {
+                    ExecuteAction(g_settings.doubleClickAction, hWnd);
+                }
             } else if (trayMessage == WM_MBUTTONUP) {
                 ExecuteAction(g_settings.middleClickAction, hWnd);
             } else if (isContextActivation) {
